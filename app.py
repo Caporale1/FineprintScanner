@@ -1,15 +1,26 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import fitz  # PyMuPDF
 import openai
+import os
+from dotenv import load_dotenv
 
-app = Flask(__name__)
+# Load environment variables from .env
+load_dotenv()
+
+app = Flask(__name__, static_folder='../front end', static_url_path='/')
 CORS(app)
 
-# ✅ Your OpenAI project secret key
-OPENAI_API_KEY = "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"
+# Get OpenAI API Key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
+# Serve the index.html file at root
+@app.route('/')
+def serve_index():
+    return send_from_directory(app.static_folder, 'index.html')
+
+# Extract text from PDF using PyMuPDF
 def extract_text_from_pdf(file):
     doc = fitz.open(stream=file.read(), filetype="pdf")
     text = ""
@@ -17,6 +28,7 @@ def extract_text_from_pdf(file):
         text += page.get_text()
     return text
 
+# Analyze PDF via POST request
 @app.route('/analyze', methods=['POST'])
 def analyze():
     pdf = request.files['pdf']
@@ -28,26 +40,19 @@ You're an expert legal assistant. Break down the following legal document into:
 2. Any potential risks, confusing terms, or red flags.
 
 Here is the document text:
-
 {text}
 """
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",  # or use "gpt-3.5-turbo" to save tokens
-            messages=[
-                {"role": "system", "content": "You are a legal summarization AI."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        answer = response.choices[0].message.content
-        return jsonify({"summary": answer})
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",  # or "gpt-4" if you have access
+        messages=[
+            {"role": "system", "content": "You're a legal summarization AI."},
+            {"role": "user", "content": prompt}
+        ]
+    )
 
-    except Exception as e:
-        print("❌ OpenAI API Error:", e)
-        return jsonify({"error": "Failed to connect to OpenAI API."}), 500
+    answer = response.choices[0].message.content
+    return jsonify({"summary": answer})
 
 if __name__ == '__main__':
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True)
